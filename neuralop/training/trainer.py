@@ -235,10 +235,10 @@ class Trainer:
             if epoch % self.eval_interval == 0:
                 # evaluate and gather metrics across each loader in test_loaders
                 eval_metrics = self.evaluate_all(epoch=epoch,
-                                                eval_losses=eval_losses,
-                                                test_loaders=test_loaders,
-                                                eval_modes=eval_modes,
-                                                max_autoregressive_steps=max_autoregressive_steps)
+                                                 eval_losses=eval_losses,
+                                                 test_loaders=test_loaders,
+                                                 eval_modes=eval_modes,
+                                                 max_autoregressive_steps=max_autoregressive_steps)
                 epoch_metrics.update(**eval_metrics)
                 # save checkpoint if conditions are met
                 if save_best is not None:
@@ -355,9 +355,9 @@ class Trainer:
         for loader_name, loader in test_loaders.items():
             loader_eval_mode = eval_modes.get(loader_name, "single_step")
             loader_metrics = self.evaluate(eval_losses, loader,
-                                    log_prefix=loader_name,
-                                    mode=loader_eval_mode,
-                                    max_steps=max_autoregressive_steps)   
+                                           log_prefix=loader_name,
+                                           mode=loader_eval_mode,
+                                           max_steps=max_autoregressive_steps)   
             all_metrics.update(**loader_metrics)
         if self.verbose:
             self.log_eval(epoch=epoch,
@@ -502,9 +502,9 @@ class Trainer:
 
         if self.mixed_precision:
             with torch.autocast(device_type=self.autocast_device_type):
-                loss += training_loss(out, **sample)
+                loss += training_loss(out, data_processor=self.data_processor, **sample)
         else:
-            loss += training_loss(out, **sample)
+            loss += training_loss(out, data_processor=self.data_processor, **sample)
 
         if self.regularizer:
             loss += self.regularizer.loss
