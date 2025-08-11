@@ -9,3 +9,5 @@ matplotlib
 opt-einsum
 h5py
 zarr
+
+gdown
