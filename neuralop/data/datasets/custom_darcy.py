@@ -110,7 +110,7 @@ class CustomDarcyDataset(PTDataset):
         }
         for file in files_to_download:
             # gdown.download(id=file_ids[file], output=root_dir)
-            gdown.download(id=file_ids[file], output=root_dir)
+            gdown.download(id=file_ids[file], output=str(root_dir / file))
             
         # once downloaded/if files already exist, init PTDataset
         super().__init__(root_dir=root_dir,
