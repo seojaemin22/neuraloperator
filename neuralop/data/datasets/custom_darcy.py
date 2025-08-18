@@ -102,8 +102,8 @@ class CustomDarcyDataset(PTDataset):
             if f"{dataset_name}_test_{res}.pt" not in already_downloaded_files:
                 files_to_download.append(f"{dataset_name}_test_{res}.pt")
         file_ids = {
-            'darcy_ZD_PWC_train_64.pt': '1hQzdQpudGTBZ7x0nURPzlV5DTcqcb1sm',
-            'darcy_ZD_PWC_test_64.pt': '1qsstWhpdYRkj7dTSeVpfDFWknj0LpCPw',
+            'darcy_ZD_PWC_train_64.pt': '1qsstWhpdYRkj7dTSeVpfDFWknj0LpCPw',
+            'darcy_ZD_PWC_test_64.pt': '1hQzdQpudGTBZ7x0nURPzlV5DTcqcb1sm',
             'darcy_ZD_PWC_train_256.pt': '1RYATFqGmVOKAUNAXVKf2P5Cdw7GYsoSe',
             'darcy_ZD_PWC_test_256.pt': '1YcJDtuJsNG0pLPBYKDLgtsxSlcEsUrde',
             'darcy_ZD_PWC_train_1024.pt': '1OLtn2-u18P_wz6EFQfLKpcvAvyJn496U',
