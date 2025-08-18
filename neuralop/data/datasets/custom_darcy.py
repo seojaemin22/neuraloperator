@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Union, List
 from copy import deepcopy
 
+import torch
 from torch.utils.data import DataLoader
 from torch.nn.functional import pad
 
@@ -178,6 +179,32 @@ def load_darcy_flow(root_dir,
             test_loaders_list.append(test_loaders)
             data_processor_list.append(subdataset.data_processor)
         return train_loader_list, test_loaders_list, data_processor_list
+    
+    if kwargs.get('decompose_multigrid', False):
+        L = kwargs.get('L', 1)  # default level count if not specified
+        subdomain_datasets = decompose_multigrid_darcy_dataset(dataset, L=L)
+
+        train_loader_list = []
+        test_loaders_list = []
+        data_processor_list = []
+        for subdataset in subdomain_datasets:
+            train_loader_list.append(DataLoader(subdataset.train_db,
+                                                batch_size=batch_size,
+                                                num_workers=1,
+                                                pin_memory=True,
+                                                persistent_workers=False))
+            test_loaders = {}
+            for res, test_bsize in zip(test_resolutions, test_batch_sizes):
+                test_loaders[res] = DataLoader(subdataset.test_dbs[res],
+                                               batch_size=test_bsize,
+                                               shuffle=False,
+                                               num_workers=1,
+                                               pin_memory=True,
+                                               persistent_workers=False)
+            test_loaders_list.append(test_loaders)
+            data_processor_list.append(subdataset.data_processor)
+        return train_loader_list, test_loaders_list, data_processor_list
+
     else:
         train_loader = DataLoader(dataset.train_db,
                                   batch_size=batch_size,
@@ -275,6 +302,123 @@ def decompose_darcy_dataset(
         for resol in test_x_subs.keys():
             test_dbs[resol] = TensorDataset(test_x_subs[resol][i], test_y_subs[resol][i])
         sub_dataset._test_dbs = test_dbs
+        subdomain_datasets.append(sub_dataset)
+
+    return subdomain_datasets
+
+
+# --------------------------------------------------
+
+def decompose_multigrid_darcy_dataset(dataset, L: int) -> List[CustomDarcyDataset]:
+    """
+    Multigrid decomposition of Darcy dataset into subdomains with L+1 levels.
+
+    Parameters
+    ----------
+    dataset : CustomDarcyDataset
+        Original dataset with train_db and test_dbs.
+    L : int
+        Number of multigrid levels (0...L).
+
+    Returns
+    -------
+    List[CustomDarcyDataset]
+        One CustomDarcyDataset per subdomain location.
+    """
+    def multigrid_crop(x_all):
+        # x_all: [N, C, res, res], C=1
+        N, C, H, W = x_all.shape
+        assert H == W and (H & (H - 1) == 0), "Resolution must be power of 2"
+        s = int(torch.log2(torch.tensor(H)).item())
+        sub_size = 2 ** (s - L)
+        num_sub = 2 ** L  # per axis
+        crops_per_subdomain = []
+
+        for i in range(num_sub):  # row index
+            for j in range(num_sub):  # col index
+                # base coords for D^0_j
+                top0 = i * sub_size
+                left0 = j * sub_size
+                bottom0 = top0 + sub_size
+                right0 = left0 + sub_size
+
+                levels = []
+                for k in range(L + 1):
+                    size_k = 2 ** (s - L + k)
+                    pad_needed = (size_k - sub_size) // 2
+
+                    top_k = top0 - pad_needed
+                    left_k = left0 - pad_needed
+                    bottom_k = bottom0 + pad_needed
+                    right_k = right0 + pad_needed
+
+                    # Clip to domain and record padding
+                    pad_top = max(0, -top_k)
+                    pad_left = max(0, -left_k)
+                    pad_bottom = max(0, bottom_k - H)
+                    pad_right = max(0, right_k - W)
+
+                    top_k = max(top_k, 0)
+                    left_k = max(left_k, 0)
+                    bottom_k = min(bottom_k, H)
+                    right_k = min(right_k, W)
+
+                    crop = x_all[:, :, top_k:bottom_k, left_k:right_k]
+                    if pad_top or pad_left or pad_bottom or pad_right:
+                        crop = pad(crop, (pad_left, pad_right, pad_top, pad_bottom),
+                                         mode="constant", value=0.0)
+
+                    # Subsample by factor 2^k
+                    if k > 0:
+                        stride = 2 ** k
+                        crop = crop[:, :, ::stride, ::stride]
+
+                    assert crop.shape[2:] == (sub_size, sub_size), \
+                        f"Level {k} crop shape {crop.shape} mismatch"
+
+                    levels.append(crop)
+
+                # Concatenate along channel dim -> [N, L+1, sub_size, sub_size]
+                levels_cat = torch.cat(levels, dim=1)
+                crops_per_subdomain.append(levels_cat)
+        return crops_per_subdomain
+
+    def decompose_y(y_all):
+        # y_all: [N, C, res, res], C=1
+        N, C, H, W = y_all.shape
+        s = int(torch.log2(torch.tensor(H)).item())
+        sub_size = 2 ** (s - L)
+        num_sub = 2 ** L
+
+        crops = []
+        for i in range(num_sub):
+            for j in range(num_sub):
+                top0 = i * sub_size
+                left0 = j * sub_size
+                bottom0 = top0 + sub_size
+                right0 = left0 + sub_size
+                crop = y_all[:, :, top0:bottom0, left0:right0]
+                crops.append(crop)
+        return crops
+
+    # --- Train set ---
+    train_x_subs = multigrid_crop(dataset.train_db.x)
+    train_y_subs = decompose_y(dataset.train_db.y)
+
+    # --- Test sets ---
+    test_x_subs = {res: multigrid_crop(test_db.x) for res, test_db in dataset.test_dbs.items()}
+    test_y_subs = {res: decompose_y(test_db.y) for res, test_db in dataset.test_dbs.items()}
+
+    # Create one dataset per subdomain location
+    subdomain_datasets = []
+    for i in range(len(train_x_subs)):
+        sub_dataset = deepcopy(dataset)
+        sub_dataset._train_db = TensorDataset(train_x_subs[i], train_y_subs[i])
+        test_dbs= {}
+        for res in test_x_subs.keys():
+            test_dbs[res] = TensorDataset(test_x_subs[res][i], test_y_subs[res][i])
+        sub_dataset._test_dbs = test_dbs
+
         subdomain_datasets.append(sub_dataset)
 
     return subdomain_datasets
