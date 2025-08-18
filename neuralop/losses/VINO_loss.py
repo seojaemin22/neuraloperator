@@ -12,24 +12,14 @@ def difference_y(U):
     return F.pad(core, (0, 0, 0, 1), mode='replicate')
 
 
-class BCLoss(object):
-
-    def __call__(self, y_pred, **kwargs):
-        loss = 0.0
-        loss += F.mse_loss(y_pred[:, :, 0, :], torch.zeros_like(y_pred[:, :, 0, :]))     # top edge (y=0)
-        loss += F.mse_loss(y_pred[:, :, -1, :], torch.zeros_like(y_pred[:, :, -1, :]))   # bottom edge (y=1)
-        loss += F.mse_loss(y_pred[:, :, :, 0], torch.zeros_like(y_pred[:, :, :, 0]))     # left edge (x=0)
-        loss += F.mse_loss(y_pred[:, :, :, -1], torch.zeros_like(y_pred[:, :, :, -1]))   # right edge (x=1)
-        return loss
-    
-
-
 class VinoDarcyLoss(object):
     
-    def __init__(self, d=2, p=2):
+    def __init__(self, d=2, p=2, use_data=False, weight=1):
         super().__init__()
-        # self.bc_loss_fn = BCLoss()
-        # self.data_loss_fn = H1Loss(d=d)
+        self.use_data = use_data
+        if use_data:
+            self.data_loss_fn = H1Loss(d=d)
+            self.weight = weight
 
     def __call__(self, y_pred, **kwargs):
         data_processor = kwargs['data_processor']
@@ -47,7 +37,6 @@ class VinoDarcyLoss(object):
         dudx_1 = dudx[:, :, 1:,   0:-1]
         dudy_0 = dudy[:, :, 0:-1, 0:-1]
 
-
         loss_grad = 0.5 * torch.sum(
             a_00 * ((dudx_0**2)/6 + (dudx_1**2)/12 + (dudy_0**2)/4 - (dudx_0*dudy_0)/6 + (dudx_1*dudy_0)/6)
             + a_01 * ((dudx_0**2)/4 + (dudx_1**2)/6 + (dudy_0**2)/4 - (dudx_0*dudx_1)/6 - (dudx_0*dudy_0)/3 + (dudx_1*dudy_0)/3)
@@ -56,8 +45,11 @@ class VinoDarcyLoss(object):
         )
 
         loss_int = torch.sum(y_pred) / ((a.shape[2] - 1) * (a.shape[3] - 1))
-        return loss_grad - loss_int
+        if self.use_data:
+            loss_data = self.data_loss_fn(y_pred, **kwargs)
+            return loss_grad - loss_int + self.weight*loss_data
+        else:
+            return loss_grad - loss_int
 
-        # loss_bc = self.bc_loss_fn(y_pred, **kwargs)
-        # loss_data = self.data_loss_fn(y_pred, **kwargs)
-        # return loss_grad - loss_in + loss_bc + loss_data
+        
+        
