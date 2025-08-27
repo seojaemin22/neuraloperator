@@ -34,6 +34,8 @@ class PTDataset:
                  test_batch_sizes: List[int],
                  train_resolution: int,
                  test_resolutions: List[int],
+                 train_file: str='',
+                 test_files: List[str]=[],
                  encode_input: bool=False, 
                  encode_output: bool=True, 
                  encoding="channel-wise",
@@ -97,7 +99,7 @@ class PTDataset:
         # Load train data
         
         data = torch.load(
-        Path(root_dir).joinpath(f"{dataset_name}_train_{train_resolution}.pt").as_posix()
+            Path(root_dir).joinpath(train_file).as_posix() if train_file != '' else Path(root_dir).joinpath(f"{dataset_name}_train_{train_resolution}.pt").as_posix()
         )
 
         x_train = data["x"].type(torch.float32).clone()
@@ -188,12 +190,16 @@ class PTDataset:
                                                    out_normalizer=output_encoder)
 
         # load test data
+        if test_files == []:
+            test_files = [Path(root_dir).joinpath(f"{dataset_name}_test_{res}.pt").as_posix() for res in test_resolutions]
+
         self._test_dbs = {}
-        for (res, n_test) in zip(test_resolutions, n_tests):
+        for (res, n_test, test_file) in zip(test_resolutions, n_tests, test_files):
             print(
                 f"Loading test db for resolution {res} with {n_test} samples "
             )
-            data = torch.load(Path(root_dir).joinpath(f"{dataset_name}_test_{res}.pt").as_posix())
+            # data = torch.load(Path(root_dir).joinpath(f"{dataset_name}_test_{res}.pt").as_posix())
+            data = torch.load(Path(root_dir).joinpath(test_file).as_posix())
 
             x_test = data["x"].type(torch.float32).clone()
             if channels_squeezed:

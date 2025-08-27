@@ -12,6 +12,8 @@ from .tensor_dataset import TensorDataset
 from .pt_dataset import PTDataset
 import gdown
 
+from .darcy_data_generation import generate_data
+
 logger = logging.Logger(logging.root.level)
 
 class CustomDarcyDataset(PTDataset):
@@ -34,7 +36,9 @@ class CustomDarcyDataset(PTDataset):
                  batch_size: int,
                  test_batch_sizes: List[int],
                  train_resolution: int,
-                 test_resolutions: List[int]=[64, 1024],
+                 test_resolutions: List[int],
+                 train_data_setting: dict={},
+                 test_data_settings: List[dict]=[],
                  encode_input: bool=False, 
                  encode_output: bool=True, 
                  encoding="channel-wise",
@@ -85,33 +89,48 @@ class CustomDarcyDataset(PTDataset):
         if not root_dir.exists():
             root_dir.mkdir(parents=True)
 
-        # List of resolutions needed for dataset object
-        resolutions = set(test_resolutions + [train_resolution])
+        train_data_setting['s'] = train_resolution
+        for i in range(len(test_data_settings)):
+            test_data_settings[i]['s'] = test_resolutions[i]
+        for i in range(len(test_data_settings), len(test_resolutions)):
+            test_data_settings.append({'s': test_resolutions[i]})
 
-        # We store data at these resolutions on the Zenodo archive
-        available_resolutions = [64, 256, 1024]
-        for res in resolutions:
-            assert res in available_resolutions, f"Error: resolution {res} not available"
-
-        # download darcy data from zenodo archive if passed
-        files_to_download = []
+        # download or generate darcy data 
         already_downloaded_files = [x.name for x in root_dir.iterdir()]
-        for res in resolutions:
-            if f"{dataset_name}_train_{res}.pt" not in already_downloaded_files:  
-                files_to_download.append(f"{dataset_name}_train_{res}.pt")
-            if f"{dataset_name}_test_{res}.pt" not in already_downloaded_files:
-                files_to_download.append(f"{dataset_name}_test_{res}.pt")
         file_ids = {
-            'darcy_ZD_PWC_train_64.pt': '1qsstWhpdYRkj7dTSeVpfDFWknj0LpCPw',
-            'darcy_ZD_PWC_test_64.pt': '1hQzdQpudGTBZ7x0nURPzlV5DTcqcb1sm',
-            'darcy_ZD_PWC_train_256.pt': '1RYATFqGmVOKAUNAXVKf2P5Cdw7GYsoSe',
-            'darcy_ZD_PWC_test_256.pt': '1YcJDtuJsNG0pLPBYKDLgtsxSlcEsUrde',
-            'darcy_ZD_PWC_train_1024.pt': '1OLtn2-u18P_wz6EFQfLKpcvAvyJn496U',
-            'darcy_ZD_PWC_test_1024.pt': '1W2ToRtFSms-ncoOeW545UiM1ZfMeSmiz',
+            'darcy_ZD_3_2_train_64.pt': '1qsstWhpdYRkj7dTSeVpfDFWknj0LpCPw',
+            'darcy_ZD_3_2_test_64.pt': '1hQzdQpudGTBZ7x0nURPzlV5DTcqcb1sm',
+            'darcy_ZD_3_2_train_256.pt': '1RYATFqGmVOKAUNAXVKf2P5Cdw7GYsoSe',
+            'darcy_ZD_3_2_test_256.pt': '1YcJDtuJsNG0pLPBYKDLgtsxSlcEsUrde',
+            'darcy_ZD_3_2_train_1024.pt': '1OLtn2-u18P_wz6EFQfLKpcvAvyJn496U',
+            'darcy_ZD_3_2_test_1024.pt': '1W2ToRtFSms-ncoOeW545UiM1ZfMeSmiz',
         }
-        for file in files_to_download:
-            # gdown.download(id=file_ids[file], output=root_dir)
-            gdown.download(id=file_ids[file], output=str(root_dir / file))
+
+        train_data_setting['tau'] = train_data_setting.get('tau', 3)
+        train_data_setting['alpha'] = train_data_setting.get('alpha', 2)
+        train_data_setting['boundary'] = train_data_setting.get('boundary', 'ZD')
+
+        train_file = f"{dataset_name}_{train_data_setting['boundary']}_{train_data_setting['tau']}_{train_data_setting['alpha']}_train_{train_data_setting['s']}.pt"
+        if train_file not in already_downloaded_files:
+            try:
+                gdown.download(id=file_ids[train_file], output=str(root_dir / train_file))
+            except:
+                print(f"'{train_file}' not existed.")
+                generate_data(train_data_setting, n_train, str(root_dir / train_file))
+
+        test_files = []
+        for i, setting in enumerate(test_data_settings):
+            setting['tau'] = setting.get('tau', 3)
+            setting['alpha'] = setting.get('alpha', 2)
+            setting['boundary'] = setting.get('boundary', 'ZD')
+
+            test_files.append(f"{dataset_name}_{setting['boundary']}_{setting['tau']}_{setting['alpha']}_test_{setting['s']}.pt")
+            if test_files[i] not in already_downloaded_files:
+                try:
+                    gdown.download(id=file_ids[test_files[i]], output=str(root_dir / test_files[i]))
+                except:
+                    print(f"'{test_files[i]}' not existed.")
+                    generate_data(setting, n_tests[i], str(root_dir / test_files[i]))
             
         # once downloaded/if files already exist, init PTDataset
         super().__init__(root_dir=root_dir,
@@ -122,6 +141,8 @@ class CustomDarcyDataset(PTDataset):
                          test_batch_sizes=test_batch_sizes,
                          train_resolution=train_resolution,
                          test_resolutions=test_resolutions,
+                         train_file=train_file,
+                         test_files=test_files,
                          encode_input=encode_input,
                          encode_output=encode_output,
                          encoding=encoding,
@@ -137,6 +158,8 @@ def load_darcy_flow(root_dir,
                     test_batch_sizes,
                     train_resolution,
                     test_resolutions,
+                    train_data_setting={},
+                    test_data_settings=[],
                     encode_input=False,
                     encode_output=True,
                     encoding="channel-wise",
@@ -151,6 +174,8 @@ def load_darcy_flow(root_dir,
                                  test_batch_sizes=test_batch_sizes,
                                  train_resolution=train_resolution,
                                  test_resolutions=test_resolutions,
+                                 train_data_setting=train_data_setting,
+                                 test_data_settings=test_data_settings,
                                  encode_input=encode_input,
                                  encode_output=encode_output,
                                  channel_dim=channel_dim,
