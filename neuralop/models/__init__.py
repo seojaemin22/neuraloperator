@@ -12,3 +12,6 @@ from .fnogno import FNOGNO
 from .gino import GINO
 from .base_model import get_model
 from .cno import CNO2d
+from .mg_tfno import MGTFNO
+from .mg_uno import MGUNO
+from .mg_cno import MGCNO
