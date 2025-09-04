@@ -180,73 +180,81 @@ def load_darcy_flow(root_dir,
                                  encode_output=encode_output,
                                  channel_dim=channel_dim,
                                  encoding=encoding)
-    
+
     if kwargs.get('decompose_dataset', False):
         subdomain_datasets = decompose_darcy_dataset(dataset, **kwargs)
-
-        train_loader_list = []
-        test_loaders_list = []
-        data_processor_list = []
+        train_loader_list, test_loaders_list, data_processor_list = [], [], []
         for subdataset in subdomain_datasets:
             train_loader_list.append(DataLoader(subdataset.train_db,
                                                 batch_size=batch_size,
-                                                num_workers=1,
-                                                pin_memory=True,
-                                                persistent_workers=False,))
-            test_loaders = {}
-            for res, test_bsize in zip(test_resolutions, test_batch_sizes):
-                test_loaders[res] = DataLoader(subdataset.test_dbs[res],
-                                               batch_size=test_bsize,
-                                               shuffle=False,
-                                               num_workers=1,
-                                               pin_memory=True,
-                                               persistent_workers=False,)
-            test_loaders_list.append(test_loaders)
-            data_processor_list.append(subdataset.data_processor)
-        return train_loader_list, test_loaders_list, data_processor_list
-    
-    if kwargs.get('decompose_multigrid', False):
-        L = kwargs.get('L', 1)  # default level count if not specified
-        subdomain_datasets = decompose_multigrid_darcy_dataset(dataset, L=L)
-
-        train_loader_list = []
-        test_loaders_list = []
-        data_processor_list = []
-        for subdataset in subdomain_datasets:
-            train_loader_list.append(DataLoader(subdataset.train_db,
-                                                batch_size=batch_size,
-                                                num_workers=1,
-                                                pin_memory=True,
+                                                num_workers=1, pin_memory=True,
                                                 persistent_workers=False))
             test_loaders = {}
             for res, test_bsize in zip(test_resolutions, test_batch_sizes):
                 test_loaders[res] = DataLoader(subdataset.test_dbs[res],
-                                               batch_size=test_bsize,
-                                               shuffle=False,
-                                               num_workers=1,
-                                               pin_memory=True,
+                                               batch_size=test_bsize, shuffle=False,
+                                               num_workers=1, pin_memory=True,
                                                persistent_workers=False)
             test_loaders_list.append(test_loaders)
             data_processor_list.append(subdataset.data_processor)
         return train_loader_list, test_loaders_list, data_processor_list
 
-    else:
-        train_loader = DataLoader(dataset.train_db,
-                                  batch_size=batch_size,
-                                  num_workers=1,
-                                  pin_memory=True,
-                                  persistent_workers=False,)
-        
-        test_loaders = {}
-        for res,test_bsize in zip(test_resolutions, test_batch_sizes):
-            test_loaders[res] = DataLoader(dataset.test_dbs[res],
-                                           batch_size=test_bsize,
-                                           shuffle=False,
-                                           num_workers=1,
-                                           pin_memory=True,
-                                           persistent_workers=False,)
-        
-        return train_loader, test_loaders, dataset.data_processor
+    if kwargs.get('decompose_multigrid', False):
+        L = kwargs.get('L', 1)
+        subdomain_datasets = decompose_multigrid_darcy_dataset(dataset, L=L)
+        train_loader_list, test_loaders_list, data_processor_list = [], [], []
+        for subdataset in subdomain_datasets:
+            train_loader_list.append(DataLoader(subdataset.train_db,
+                                                batch_size=batch_size,
+                                                num_workers=1, pin_memory=True,
+                                                persistent_workers=False))
+            test_loaders = {}
+            for res, test_bsize in zip(test_resolutions, test_batch_sizes):
+                test_loaders[res] = DataLoader(subdataset.test_dbs[res],
+                                               batch_size=test_bsize, shuffle=False,
+                                               num_workers=1, pin_memory=True,
+                                               persistent_workers=False)
+            test_loaders_list.append(test_loaders)
+            data_processor_list.append(subdataset.data_processor)
+        return train_loader_list, test_loaders_list, data_processor_list
+
+    if kwargs.get('decompose_multigrid_patch', False):
+        subdomain_size = kwargs.get('subdomain_size', 32)
+        stride = kwargs.get('stride', subdomain_size)
+        L = kwargs.get('L', 1)
+
+        subdomain_datasets = decompose_multigrid_patch_dataset(dataset,
+                                                               subdomain_size=subdomain_size,
+                                                               stride=stride,
+                                                               L=L)
+        train_loader_list, test_loaders_list, data_processor_list = [], [], []
+        for subdataset in subdomain_datasets:
+            train_loader_list.append(DataLoader(subdataset.train_db,
+                                                batch_size=batch_size,
+                                                num_workers=1, pin_memory=True,
+                                                persistent_workers=False))
+            test_loaders = {}
+            for res, test_bsize in zip(test_resolutions, test_batch_sizes):
+                test_loaders[res] = DataLoader(subdataset.test_dbs[res],
+                                               batch_size=test_bsize, shuffle=False,
+                                               num_workers=1, pin_memory=True,
+                                               persistent_workers=False)
+            test_loaders_list.append(test_loaders)
+            data_processor_list.append(subdataset.data_processor)
+        return train_loader_list, test_loaders_list, data_processor_list
+
+    # Default (no decomposition)
+    train_loader = DataLoader(dataset.train_db,
+                              batch_size=batch_size,
+                              num_workers=1, pin_memory=True,
+                              persistent_workers=False)
+    test_loaders = {}
+    for res,test_bsize in zip(test_resolutions, test_batch_sizes):
+        test_loaders[res] = DataLoader(dataset.test_dbs[res],
+                                       batch_size=test_bsize, shuffle=False,
+                                       num_workers=1, pin_memory=True,
+                                       persistent_workers=False)
+    return train_loader, test_loaders, dataset.data_processor
 
 # --------------------------------------------------
 
@@ -447,3 +455,91 @@ def decompose_multigrid_darcy_dataset(dataset, L: int) -> List[CustomDarcyDatase
         subdomain_datasets.append(sub_dataset)
 
     return subdomain_datasets
+
+def decompose_multigrid_patch_dataset(
+    dataset,
+    subdomain_size: int,
+    stride: int,
+    L: int,
+) -> List:
+    """
+    Spatial decomposition into (possibly overlapping) subdomains of size `subdomain_size`,
+    PLUS multigrid-style levels per subdomain (0..L). Larger windows that cross boundaries
+    are zero-padded implicitly so every subdomain position is valid.
+
+    Returns a list of CustomDarcyDataset clones, one per subdomain position.
+    """
+
+    def decompose_tensor_pair(x_all, y_all):
+        N, C, H, W = x_all.shape
+        assert H == W and (H & (H - 1)) == 0, "Global domain size must be a power of 2"
+        assert (subdomain_size & (subdomain_size - 1)) == 0, "Subdomain size must be a power of 2"
+        assert subdomain_size <= H, "Subdomain size must fit in the global domain"
+        assert (H - subdomain_size) % stride == 0, "Stride must evenly divide (H - subdomain_size)"
+
+        xs, ys = [], []
+        for top in range(0, H - subdomain_size + 1, stride):
+            for left in range(0, W - subdomain_size + 1, stride):
+                bottom, right = top + subdomain_size, left + subdomain_size
+
+                # y: finest-only crop
+                y_crop = y_all[:, :, top:bottom, left:right]
+
+                # x: stack levels 0..L (each downsampled to SxS), concat on channel dim
+                levels = []
+                for k in range(L + 1):
+                    size_k = subdomain_size * (2 ** k)   # window size at this level
+                    pad_needed = (size_k - subdomain_size) // 2
+
+                    t = top - pad_needed
+                    l = left - pad_needed
+                    b = bottom + pad_needed
+                    r = right + pad_needed
+
+                    # compute out-of-domain padding
+                    pt = max(0, -t)
+                    pl = max(0, -l)
+                    pb = max(0, b - H)
+                    pr = max(0, r - W)
+
+                    # clip to valid region and extract
+                    t = max(t, 0); l = max(l, 0); b = min(b, H); r = min(r, W)
+                    crop = x_all[:, :, t:b, l:r]
+
+                    # pad back to (size_k, size_k) if needed
+                    if pt or pl or pb or pr:
+                        crop = pad(crop, (pl, pr, pt, pb), mode="constant", value=0.0)
+
+                    # downsample by factor 2^k via striding to (S, S)
+                    if k > 0:
+                        s = 2 ** k
+                        crop = crop[:, :, ::s, ::s]
+
+                    assert crop.shape[2:] == (subdomain_size, subdomain_size), \
+                        f"Level {k} produced {crop.shape[2:]}"
+
+                    levels.append(crop)
+
+                x_levels = torch.cat(levels, dim=1)   # (N, C_in*(L+1), S, S)
+                xs.append(x_levels)
+                ys.append(y_crop)
+
+        return xs, ys
+
+    # Train
+    train_xs, train_ys = decompose_tensor_pair(dataset._train_db.x, dataset._train_db.y)
+    # Tests
+    test_xs, test_ys = {}, {}
+    for res, tdb in dataset.test_dbs.items():
+        test_xs[res], test_ys[res] = decompose_tensor_pair(tdb.x, tdb.y)
+
+    # Create one dataset per subdomain location
+    subdatasets = []
+    for i in range(len(train_xs)):
+        sub = deepcopy(dataset)
+        sub._train_db = TensorDataset(train_xs[i], train_ys[i])
+        tdbs = {res: TensorDataset(test_xs[res][i], test_ys[res][i]) for res in test_xs.keys()}
+        sub._test_dbs = tdbs
+        subdatasets.append(sub)
+
+    return subdatasets
