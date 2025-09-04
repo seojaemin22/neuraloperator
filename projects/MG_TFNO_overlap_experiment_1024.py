@@ -42,15 +42,19 @@ eval_losses={'h1': h1loss, 'l2': l2loss}
 # Create lists of custom Darcy datasets for training and testing
 # with multigrid decomposition
 num_levels = 3
+tau = 3
+alpha = 2
 train_loader_list, test_loader_list, data_processor_list = load_darcy_flow(
-    root_dir="data",
-    dataset_name="darcy_ZD_PWC",
+    root_dir="./data/",
+    dataset_name="darcy",
     n_train=1000,
     n_tests=[50],
     batch_size=32,
     test_batch_sizes=[50],
     train_resolution=resolution,
     test_resolutions=[resolution],
+    train_data_setting={'tau': tau, 'alpha': alpha, 'boundary': 'ZD'},
+    test_data_settings=[{'tau': tau, 'alpha': alpha, 'boundary': 'ZD'}],
     subdomain_size=64,
     stride=16,
     L=num_levels,
@@ -114,13 +118,15 @@ for i, model in enumerate(models):
 
 train_loader, test_loaders, data_processor = load_darcy_flow(
     root_dir="./data/",
-    dataset_name='darcy_ZD_PWC',
+    dataset_name='darcy',
     n_train=1000,
     n_tests=[50],
     batch_size=1,
     test_batch_sizes=[50],
     train_resolution=resolution,
-    test_resolutions=[resolution]
+    test_resolutions=[resolution],
+    train_data_setting={'tau': tau, 'alpha': alpha, 'boundary': 'ZD'},
+    test_data_settings=[{'tau': tau, 'alpha': alpha, 'boundary': 'ZD'}],
 )
 
 tfno_model = TFNO(
