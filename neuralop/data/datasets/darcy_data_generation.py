@@ -6,32 +6,56 @@ from scipy.sparse.linalg import cg
 import torch
 from tqdm import tqdm
 
-def generate_data(setting, num_data, file, seed=0):  
-    master = np.random.SeedSequence(seed)  
-    child_seeds = master.spawn(num_data)
-    rngs = [np.random.Generator(np.random.PCG64(cs)) for cs in child_seeds]
+def generate_data(setting, num_data, file, seed=0):
+    master = np.random.SeedSequence(seed + hash(file) % (2**32))    
+    boundary = setting.pop('boundary', 'ZD')
+    if boundary == 'ZD':
+        child_seeds = master.spawn(num_data)
+        rngs = [np.random.Generator(np.random.PCG64(cs)) for cs in child_seeds]
 
-    boundary = setting.pop('boundary')
-    boundary_setting = {
-        'boundary_value': np.zeros((setting['s'], setting['s'])),
-        'boundary_flux': np.zeros((setting['s'], setting['s'])),
-        'flux_mask': np.zeros((setting['s'], setting['s']), dtype=bool),
-    }
-    F = np.ones((setting['s'], setting['s']))
+        F = np.ones((setting['s'], setting['s']))
+        boundary_value = np.zeros((setting['s'], setting['s']))
 
-    C_list, U_list = [], []
-    for i in tqdm(range(num_data), desc=f'Generating {file}'):
-        rng = rngs[i]
-        GRF_sample = psi(GRF_DCT(**setting, rng=rng))
-        result = solve_darcy_2d(GRF_sample, F, **boundary_setting)
-        C_list.append(GRF_sample)
-        U_list.append(result)
+        C_list, U_list = [], []
+        for i in tqdm(range(num_data), desc=f'Generating {file}'):
+            rng = rngs[i]
+            GRF_sample = psi(GRF_DCT(**setting, rng=rng))
+            C_list.append(GRF_sample)
+            result = solve_darcy_2d(GRF_sample, F, boundary_value=boundary_value)
+            U_list.append(result)
+    elif boundary == 'ARD1':
+        child_seeds = master.spawn(3*num_data)
+        rngs = [np.random.Generator(np.random.PCG64(cs)) for cs in child_seeds]
+
+        C_list, U_list = [], []
+        for i in tqdm(range(num_data), desc=f'Generating {file}'):
+            GRF_sample = psi(GRF_DCT(**setting, rng=rngs[3*i]))
+            F = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2, fully_normalized=True, rng=rngs[3*i+1]) + 1
+            boundary_value = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2, fully_normalized=True, rng=rngs[3*i+2])
+            boundary_value[1:-1, 1:-1] = 0
+            C_list.append(GRF_sample)
+            result = solve_darcy_2d(GRF_sample, F, boundary_value=boundary_value)
+            U_list.append(result)
+    elif boundary == 'ARD3':
+        child_seeds = master.spawn(3*num_data)
+        rngs = [np.random.Generator(np.random.PCG64(cs)) for cs in child_seeds]
+
+        C_list, U_list = [], []
+        for i in tqdm(range(num_data), desc=f'Generating {file}'):
+            GRF_sample = psi(GRF_DCT(**setting, rng=rngs[3*i]))
+            F = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2, fully_normalized=True, rng=rngs[3*i+1]) + 1
+            boundary_value = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2, fully_normalized=True, rng=rngs[3*i+2])
+            boundary_value[1:-1, 1:-1] = 0
+            C_list.append([GRF_sample, F, boundary_value])
+            result = solve_darcy_2d(GRF_sample, F, boundary_value=boundary_value)
+            U_list.append([result])
     
     C = torch.from_numpy(np.array(C_list))
     U = torch.from_numpy(np.array(U_list))
     data = {'x': C, 'y': U}
     torch.save(data, file)
     print(f'{file} saved')
+        
 
 
 

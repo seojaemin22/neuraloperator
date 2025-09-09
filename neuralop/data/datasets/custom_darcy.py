@@ -43,7 +43,8 @@ class CustomDarcyDataset(PTDataset):
                  encode_output: bool=True, 
                  encoding="channel-wise",
                  channel_dim=1,
-                 subsampling_rate=None):
+                 subsampling_rate=None,
+                 channels_squeezed=True):
 
         """DarcyDataset
 
@@ -148,7 +149,8 @@ class CustomDarcyDataset(PTDataset):
                          encoding=encoding,
                          channel_dim=channel_dim,
                          input_subsampling_rate=subsampling_rate,
-                         output_subsampling_rate=subsampling_rate)
+                         output_subsampling_rate=subsampling_rate,
+                         channels_squeezed=channels_squeezed)
 
 def load_darcy_flow(root_dir,
                     dataset_name,
@@ -164,6 +166,7 @@ def load_darcy_flow(root_dir,
                     encode_output=True,
                     encoding="channel-wise",
                     channel_dim=1,
+                    channels_squeezed=True,
                     **kwargs):
 
     dataset = CustomDarcyDataset(root_dir=root_dir,
@@ -179,7 +182,8 @@ def load_darcy_flow(root_dir,
                                  encode_input=encode_input,
                                  encode_output=encode_output,
                                  channel_dim=channel_dim,
-                                 encoding=encoding)
+                                 encoding=encoding,
+                                 channels_squeezed=channels_squeezed)
 
     if kwargs.get('decompose_dataset', False):
         subdomain_datasets = decompose_darcy_dataset(dataset, **kwargs)
