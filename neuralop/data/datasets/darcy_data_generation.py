@@ -23,6 +23,7 @@ def generate_data(setting, num_data, file, seed=0):
             C_list.append(GRF_sample)
             result = solve_darcy_2d(GRF_sample, F, boundary_value=boundary_value)
             U_list.append(result)
+            
     elif boundary == 'ARD1':
         child_seeds = master.spawn(3*num_data)
         rngs = [np.random.Generator(np.random.PCG64(cs)) for cs in child_seeds]
@@ -36,6 +37,21 @@ def generate_data(setting, num_data, file, seed=0):
             C_list.append(GRF_sample)
             result = solve_darcy_2d(GRF_sample, F, boundary_value=boundary_value)
             U_list.append(result)
+
+    elif boundary == 'ARD2':
+        child_seeds = master.spawn(2*num_data)
+        rngs = [np.random.Generator(np.random.PCG64(cs)) for cs in child_seeds]
+
+        C_list, U_list = [], []
+        for i in tqdm(range(num_data), desc=f'Generating {file}'):
+            GRF_sample = psi(GRF_DCT(**setting, rng=rngs[2*i]))
+            F = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2,
+                        fully_normalized=True, rng=rngs[2*i+1]) + 1
+            boundary_value = np.zeros((setting['s'], setting['s']))
+            C_list.append([GRF_sample, F])
+            result = solve_darcy_2d(GRF_sample, F, boundary_value=boundary_value)
+            U_list.append([result])
+    
     elif boundary == 'ARD3':
         child_seeds = master.spawn(3*num_data)
         rngs = [np.random.Generator(np.random.PCG64(cs)) for cs in child_seeds]
