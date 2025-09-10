@@ -23,7 +23,7 @@ def generate_data(setting, num_data, file, seed=0):
             C_list.append(GRF_sample)
             result = solve_darcy_2d(GRF_sample, F, boundary_value=boundary_value)
             U_list.append(result)
-            
+
     elif boundary == 'ARD1':
         child_seeds = master.spawn(3*num_data)
         rngs = [np.random.Generator(np.random.PCG64(cs)) for cs in child_seeds]
@@ -65,6 +65,44 @@ def generate_data(setting, num_data, file, seed=0):
             C_list.append([GRF_sample, F, boundary_value])
             result = solve_darcy_2d(GRF_sample, F, boundary_value=boundary_value)
             U_list.append([result])
+
+    elif boundary == 'ARD4':
+        child_seeds = master.spawn(2*num_data)
+        rngs = [np.random.Generator(np.random.PCG64(cs)) for cs in child_seeds]
+
+        C_list, U_list = [], []
+        for i in tqdm(range(num_data), desc=f'Generating {file}'):
+            # Random coefficient and forcing
+            GRF_sample = psi(GRF_DCT(**setting, rng=rngs[2*i]))
+            F = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2,
+                        fully_normalized=True, rng=rngs[2*i+1]) + 1
+
+            # Boundary setup
+            s = setting['s']
+            boundary_value = np.zeros((s, s))
+            boundary_flux = np.zeros((s, s))
+            flux_mask = np.zeros((s, s))
+
+            # Dirichlet on x=0 and x=1
+            boundary_value[:, 0] = 0.0   # left side
+            boundary_value[:, -1] = 1.0  # right side
+
+            # Neumann on y=0 and y=1 → handled via flux_mask
+            flux_mask[0, :] = 1
+            flux_mask[-1, :] = 1
+            boundary_flux[0, :] = 0.0
+            boundary_flux[-1, :] = 0.0
+
+            # Save inputs (2 channels: coeff, F)
+            C_list.append([GRF_sample, F])
+
+            # Solve with mixed BCs
+            result = solve_darcy_2d(GRF_sample, F,
+                                    boundary_value=boundary_value,
+                                    boundary_flux=boundary_flux,
+                                    flux_mask=flux_mask)
+            U_list.append([result])
+
     
     C = torch.from_numpy(np.array(C_list))
     U = torch.from_numpy(np.array(U_list))
