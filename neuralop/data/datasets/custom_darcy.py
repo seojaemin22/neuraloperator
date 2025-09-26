@@ -110,8 +110,16 @@ class CustomDarcyDataset(PTDataset):
         train_data_setting['tau'] = train_data_setting.get('tau', 3)
         train_data_setting['alpha'] = train_data_setting.get('alpha', 2)
         train_data_setting['boundary'] = train_data_setting.get('boundary', 'ZD')
+        train_data_setting['coeff_type'] = train_data_setting.get('coeff_type', 'default')
 
-        train_file = f"{dataset_name}_{train_data_setting['boundary']}_{train_data_setting['tau']}_{train_data_setting['alpha']}_train_{train_data_setting['s']}.pt"
+        train_file = (
+            f"{dataset_name}"
+            f"{'_' + train_data_setting['coeff_type'] if train_data_setting['coeff_type'] != 'default' else ''}"
+            f"_{train_data_setting['boundary']}"
+            f"_{train_data_setting['tau']}"
+            f"_{train_data_setting['alpha']}"
+            f"_train_{train_data_setting['s']}.pt"
+        )
         if train_file not in already_downloaded_files:
             try:
                 gdown.download(id=file_ids[train_file], output=str(root_dir / train_file))
@@ -124,8 +132,16 @@ class CustomDarcyDataset(PTDataset):
             setting['tau'] = setting.get('tau', 3)
             setting['alpha'] = setting.get('alpha', 2)
             setting['boundary'] = setting.get('boundary', 'ZD')
+            setting['coeff_type'] = setting.get('coeff_type', 'default')
 
-            test_files.append(f"{dataset_name}_{setting['boundary']}_{setting['tau']}_{setting['alpha']}_test_{setting['s']}.pt")
+            test_files.append((
+                f"{dataset_name}"
+                f"{'_' + setting['coeff_type'] if setting['coeff_type'] != 'default' else ''}"
+                f"_{setting['boundary']}"
+                f"_{setting['tau']}"
+                f"_{setting['alpha']}"
+                f"_test_{setting['s']}.pt"
+            ))
             if test_files[i] not in already_downloaded_files:
                 try:
                     gdown.download(id=file_ids[test_files[i]], output=str(root_dir / test_files[i]))

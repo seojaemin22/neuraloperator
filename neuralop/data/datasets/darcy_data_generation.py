@@ -5,11 +5,101 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.linalg import cg
 import torch
 from tqdm import tqdm
+from scipy.stats import norm
+from math import ceil
+
+epsilon = 1e-2
+
+def psi(a):
+    return np.where(a > 0, 12.0, 3.0)
+
+def psi_quantile(a, sigma, ps=np.array([0.1, 0.25, 0.5, 0.75, 0.9, 1]), 
+                 values=np.array([20.0, 16.0, 12.0, 8.0, 4.0, epsilon]),
+                 rng: np.random.Generator = None):
+    rng.shuffle(values)
+    z_edges = norm.ppf(ps)
+    edges = z_edges * sigma
+    labels = np.digitize(a, edges)
+    return values[labels]
+
+def make_coeff(setting, rng, coeff_type='default'):
+    
+    if coeff_type == 'default':
+        return psi(GRF_DCT(**setting, rng=rng))
+    
+    elif coeff_type == 'hard1':
+        return psi_quantile(*GRF_DCT(**setting, rng=rng, return_with_sigma=True), rng=rng)
+    
+    elif coeff_type == 'hard2':
+        coarse_n = 16
+        s = setting['s']
+        assert s%coarse_n == 0
+        coeff = np.full((s, s), fill_value=epsilon, dtype=float)
+
+        b = s // coarse_n
+        total_cells = coarse_n * coarse_n
+
+        levels  = np.array([20.0, 16.0, 12.0, 8.0, 4.0], dtype=float)
+        n_patches = np.array([ceil(total_cells*(3/32)), ceil(total_cells*(1/32)), ceil(total_cells*(1/32)), ceil(total_cells*(1/32)), ceil(total_cells*(1/32))], dtype=int)
+        assert n_patches.sum() <= total_cells
+
+        chosen = rng.choice(total_cells, size=n_patches.sum(), replace=False)
+
+        start = 0
+        for val, cnt in zip(levels, n_patches):
+            ids = chosen[start:start+cnt]
+            start += cnt
+            ii = ids // coarse_n
+            jj = ids % coarse_n
+
+            for i, j in zip(ii, jj):
+                r0, r1 = i*b, (i+1)*b
+                c0, c1 = j*b, (j+1)*b
+                coeff[r0:r1, c0:c1] = val
+
+        return coeff
+    
+    elif coeff_type == 'hard3':
+        band_width = 8
+        s = setting['s']
+        assert s%band_width == 0
+
+        new_setting = {**setting, 's':s//band_width, 'd':1, 'tau':10*setting['tau']}
+        line = psi_quantile(*GRF_DCT(**new_setting, rng=rng, return_with_sigma=True), rng=rng)
+        row = np.repeat(line, band_width)
+
+        if len(row) > s:
+            row = row[:s]
+        elif len(row) < s:
+            row = np.pad(row, (0, s - len(row)), mode='edge')
+        
+        coeff = np.tile(row, (s, 1))
+        return coeff
+    
+    elif coeff_type == 'hard4':
+        band_width = 8
+        s = setting['s']
+        assert s%band_width == 0
+
+        new_setting = {**setting, 's':s//band_width, 'd':1, 'tau':10*setting['tau']}
+        line = psi_quantile(*GRF_DCT(**new_setting, rng=rng, return_with_sigma=True), rng=rng)
+        row = np.repeat(line, band_width)
+
+        if len(row) > s:
+            row = row[:s]
+        elif len(row) < s:
+            row = np.pad(row, (0, s - len(row)), mode='edge')
+        
+        coeff = np.tile(row, (s, 1)).T
+        return coeff
+
 
 def generate_data(setting, num_data, file, seed=0):
     master = np.random.SeedSequence(seed + hash(file) % (2**32))    
     boundary = setting.pop('boundary', 'ZD')
-    if boundary == 'ZD':
+    coeff_type = setting.pop('coeff_type', 'default')
+
+    if boundary == 'ZD' or boundary == 'ARD1':
         child_seeds = master.spawn(num_data)
         rngs = [np.random.Generator(np.random.PCG64(cs)) for cs in child_seeds]
 
@@ -19,21 +109,7 @@ def generate_data(setting, num_data, file, seed=0):
         C_list, U_list = [], []
         for i in tqdm(range(num_data), desc=f'Generating {file}'):
             rng = rngs[i]
-            GRF_sample = psi(GRF_DCT(**setting, rng=rng))
-            C_list.append(GRF_sample)
-            result = solve_darcy_2d(GRF_sample, F, boundary_value=boundary_value)
-            U_list.append(result)
-
-    elif boundary == 'ARD1':
-        child_seeds = master.spawn(3*num_data)
-        rngs = [np.random.Generator(np.random.PCG64(cs)) for cs in child_seeds]
-
-        C_list, U_list = [], []
-        for i in tqdm(range(num_data), desc=f'Generating {file}'):
-            GRF_sample = psi(GRF_DCT(**setting, rng=rngs[3*i]))
-            F = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2, fully_normalized=True, rng=rngs[3*i+1]) + 1
-            boundary_value = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2, fully_normalized=True, rng=rngs[3*i+2])
-            boundary_value[1:-1, 1:-1] = 0
+            GRF_sample = make_coeff(setting, rng, coeff_type)
             C_list.append(GRF_sample)
             result = solve_darcy_2d(GRF_sample, F, boundary_value=boundary_value)
             U_list.append(result)
@@ -44,7 +120,7 @@ def generate_data(setting, num_data, file, seed=0):
 
         C_list, U_list = [], []
         for i in tqdm(range(num_data), desc=f'Generating {file}'):
-            GRF_sample = psi(GRF_DCT(**setting, rng=rngs[2*i]))
+            GRF_sample = make_coeff(setting, rngs[2*i], coeff_type)
             F = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2,
                         fully_normalized=True, rng=rngs[2*i+1]) + 1
             boundary_value = np.zeros((setting['s'], setting['s']))
@@ -58,7 +134,7 @@ def generate_data(setting, num_data, file, seed=0):
 
         C_list, U_list = [], []
         for i in tqdm(range(num_data), desc=f'Generating {file}'):
-            GRF_sample = psi(GRF_DCT(**setting, rng=rngs[3*i]))
+            GRF_sample = make_coeff(setting, rngs[3*i], coeff_type)
             F = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2, fully_normalized=True, rng=rngs[3*i+1]) + 1
             boundary_value = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2, fully_normalized=True, rng=rngs[3*i+2])
             boundary_value[1:-1, 1:-1] = 0
@@ -73,7 +149,7 @@ def generate_data(setting, num_data, file, seed=0):
         C_list, U_list = [], []
         for i in tqdm(range(num_data), desc=f'Generating {file}'):
             # Random coefficient and forcing
-            GRF_sample = psi(GRF_DCT(**setting, rng=rngs[2*i]))
+            GRF_sample = make_coeff(setting, rngs[2*i], coeff_type)
             F = GRF_DCT(s=setting['s'], tau=3, alpha=3, d=2,
                         fully_normalized=True, rng=rngs[2*i+1]) + 1
 
@@ -114,7 +190,7 @@ def generate_data(setting, num_data, file, seed=0):
 
 
 def GRF_DCT(s: int, tau: float, alpha: float, d: int = 2, fully_normalized: bool = True, mode = None,
-            rng: np.random.Generator = None):
+            rng: np.random.Generator = None, return_with_sigma: bool = False):
 
     # [1] Build λ
     k = [np.arange(s) for _ in range(d)]
@@ -123,26 +199,43 @@ def GRF_DCT(s: int, tau: float, alpha: float, d: int = 2, fully_normalized: bool
     if fully_normalized:
         sqrt_λ = tau**(alpha - d/2) * sqrt_λ
     
-    # [2] Sample ξ
+    # variance
+    lam = sqrt_λ**2
+
+    # [2] truncation mask
+    if mode is not None:
+        slicer = tuple(slice(0, mode) for _ in range(d))
+        trunc_mask = np.zeros_like(lam, dtype=bool)
+        trunc_mask[slicer] = True
+    else:
+        trunc_mask = np.ones_like(lam, dtype=bool)
+
+    dc_idx = (0,)*d
+    trunc_mask[dc_idx] = False
+
+    sigma2_avg = lam[trunc_mask].sum() / (s**d)
+    sigma_avg = float(np.sqrt(sigma2_avg))
+
+    # [3] Sample ξ
+    if rng is None:
+        rng = np.random.default_rng()
     ξ = rng.normal(0.0, 1.0, size=[s]*d)
 
-    # [3] Construct KL expansion using DCT
+    # [4] Construct KL expansion using DCT
     spec = sqrt_λ * ξ
-    spec[[0]*d] = 0  # for zero-mean
+    spec[dc_idx] = 0  # for zero-mean
     
     if mode is not None:
         trunc = np.zeros_like(spec)
-        slicer = tuple(slice(0, mode) for _ in range(d))
         trunc[slicer] = spec[slicer]
         result = idctn(trunc, type=2, norm='ortho')
     else:
         result = idctn(spec, type=2, norm='ortho')
 
-    return result
-
-def psi(a):
-    return np.where(a > 0, 12.0, 3.0)
-
+    if return_with_sigma:
+        return result, sigma_avg
+    else:
+        return result
 
 
 def solve_darcy_2d(coeff, F, boundary_value=None, boundary_flux=None, flux_mask=None):
