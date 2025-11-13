@@ -1,0 +1,67 @@
+{
+  "os":  "Linux-6.8.0-86-generic-x86_64-with-glibc2.35",
+  "python":  "CPython 3.11.12",
+  "startedAt":  "2025-11-12T02:01:56.744659Z",
+  "args":  [
+    "--gpu_number",
+    "0",
+    "--resolution",
+    "129"
+  ],
+  "program":  "/home/haltmayermarc/Samsung/neuraloperator/Experiments_LOD/FNO_experiment.py",
+  "codePath":  "Experiments_LOD/FNO_experiment.py",
+  "codePathLocal":  "FNO_experiment.py",
+  "git":  {
+    "remote":  "https://github.com/seojaemin22/neuraloperator.git",
+    "commit":  "cb33f67cc2b01fdaffa0a581e238cb19f0dd78b2"
+  },
+  "email":  "haltmayermarc@cau.ac.kr",
+  "root":  "/home/haltmayermarc/Samsung/neuraloperator/Experiments_LOD",
+  "host":  "user-desktop",
+  "executable":  "/home/haltmayermarc/anaconda3/envs/fenics/bin/python3",
+  "cpu_count":  16,
+  "cpu_count_logical":  32,
+  "gpu":  "NVIDIA RTX A6000",
+  "gpu_count":  4,
+  "disk":  {
+    "/":  {
+      "total":  "1006450962432",
+      "used":  "914010886144"
+    }
+  },
+  "memory":  {
+    "total":  "270103248896"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere",
+      "uuid":  "GPU-2193dc89-e3a8-9bbb-32b3-48fe1b96d6e6"
+    },
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere",
+      "uuid":  "GPU-dc0c0f3b-8eaf-ce8c-938a-f6ee7884cd80"
+    },
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere",
+      "uuid":  "GPU-ad00ce5a-984d-0751-4c33-c8c64a894909"
+    },
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere",
+      "uuid":  "GPU-329fcbc9-fa86-3420-b179-4958e955a084"
+    }
+  ],
+  "cudaVersion":  "13.0",
+  "writerId":  "tl2ph4vdjvm5gwdrbcwpio1rybdniz1v"
+}

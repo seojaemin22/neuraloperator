@@ -16,6 +16,133 @@ from .darcy_data_generation import generate_data
 
 logger = logging.Logger(logging.root.level)
 
+class CustomDarcyDatasetLOD(PTDataset):
+    def __init__(self,
+                 root_dir: Union[Path, str],
+                 dataset_name: str,
+                 n_train: int,
+                 n_tests: List[int],
+                 batch_size: int,
+                 test_batch_sizes: List[int],
+                 train_resolution: int,
+                 test_resolutions: List[int],
+                 train_data_setting: dict={},
+                 test_data_settings: List[dict]=[],
+                 encode_input: bool=False, 
+                 encode_output: bool=True, 
+                 encoding="channel-wise",
+                 channel_dim=1,
+                 subsampling_rate=None,
+                 channels_squeezed=True
+                 ):
+
+
+        # convert root dir to Path
+        if isinstance(root_dir, str):
+            root_dir = Path(root_dir)
+        if not root_dir.exists():
+            root_dir.mkdir(parents=True)
+
+        train_data_setting['s'] = train_resolution
+        for i in range(len(test_data_settings)):
+            test_data_settings[i]['s'] = test_resolutions[i]
+        for i in range(len(test_data_settings), len(test_resolutions)):
+            test_data_settings.append({'s': test_resolutions[i]})
+
+        train_data_setting['coeff_type'] = train_data_setting.get('coeff_type', 'default')
+
+        train_file = (
+            f"{dataset_name}"
+            f"{'_' + train_data_setting['coeff_type'] if train_data_setting['coeff_type'] != 'default' else ''}"
+            f"_train_{train_data_setting['s']}.pt"
+        )
+
+        test_files = []
+        for i, setting in enumerate(test_data_settings):
+            setting['coeff_type'] = setting.get('coeff_type', 'default')
+
+            test_files.append((
+                f"{dataset_name}"
+                f"{'_' + setting['coeff_type'] if setting['coeff_type'] != 'default' else ''}"
+                f"_test_{setting['s']}.pt"
+            ))
+            
+        # once downloaded/if files already exist, init PTDataset
+        super().__init__(root_dir=root_dir,
+                         dataset_name=dataset_name,
+                         n_train=n_train,
+                         n_tests=n_tests,
+                         batch_size=batch_size,
+                         test_batch_sizes=test_batch_sizes,
+                         train_resolution=train_resolution,
+                         test_resolutions=test_resolutions,
+                         train_file=train_file,
+                         test_files=test_files,
+                         encode_input=encode_input,
+                         encode_output=encode_output,
+                         encoding=encoding,
+                         channel_dim=channel_dim,
+                         input_subsampling_rate=subsampling_rate,
+                         output_subsampling_rate=subsampling_rate,
+                         channels_squeezed=channels_squeezed)
+
+        
+def load_darcy_flow_LOD(
+    root_dir: str = "./data/",
+    dataset_name: str = "darcy",
+    n_train: int = 1000,
+    n_tests: list = [100],
+    batch_size: int = 100,
+    test_batch_sizes: list = [100],
+    train_resolution: int = 65,
+    test_resolutions: list = [65],
+    train_data_setting: dict = {"coeff_type": "hard1"},
+    test_data_settings: list = [{"coeff_type": "hard1"}],
+    encode_input: bool = False,
+    encode_output: bool = True,
+    encoding: str = "channel-wise",
+    channel_dim: int = 1,
+    channels_squeezed: bool = True
+):
+    """
+    Load precomputed Darcy flow LOD data stored as .pt files,
+    return train and test DataLoaders and (optional) data processor.
+    """
+    root_dir = Path(root_dir)
+    print("LOD")
+    root_dir.mkdir(exist_ok=True, parents=True)
+
+    # Initialize CustomDarcyDataset
+    dataset = CustomDarcyDatasetLOD(
+        root_dir=root_dir,
+        dataset_name=dataset_name,
+        n_train=n_train,
+        n_tests=n_tests,
+        batch_size=batch_size,
+        test_batch_sizes=test_batch_sizes,
+        train_resolution=train_resolution,
+        test_resolutions=test_resolutions,
+        train_data_setting=train_data_setting,
+        test_data_settings=test_data_settings,
+        encode_input=encode_input,
+        encode_output=encode_output,
+        encoding=encoding,
+        channel_dim=channel_dim,
+        channels_squeezed=channels_squeezed
+    )
+
+    train_loader = DataLoader(dataset.train_db,
+                              batch_size=batch_size,
+                              num_workers=1, pin_memory=True,
+                              persistent_workers=False)
+    test_loaders = {}
+    for res,test_bsize in zip(test_resolutions, test_batch_sizes):
+        test_loaders[res] = DataLoader(dataset.test_dbs[res],
+                                       batch_size=test_bsize, shuffle=False,
+                                       num_workers=1, pin_memory=True,
+                                       persistent_workers=False)
+    return train_loader, test_loaders, dataset.data_processor
+
 class CustomDarcyDataset(PTDataset):
     """
     DarcyDataset stores data generated according to Darcy's Law.
@@ -167,6 +294,7 @@ class CustomDarcyDataset(PTDataset):
                          input_subsampling_rate=subsampling_rate,
                          output_subsampling_rate=subsampling_rate,
                          channels_squeezed=channels_squeezed)
+        
 
 def load_darcy_flow(root_dir,
                     dataset_name,
